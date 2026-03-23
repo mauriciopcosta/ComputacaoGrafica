@@ -1,1 +1,1 @@
-![PrintDesafioM1](assets/PrintDesafioM1.jpeg)
+![PrintDesafioM1](assets/PrintDesafioM1.png)
