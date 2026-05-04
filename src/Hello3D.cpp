@@ -1,13 +1,19 @@
-/* Hello Triangle - código adaptado de https://learnopengl.com/#!Getting-started/Hello-Triangle
+/* Desafio M2 - Cubos Interativos
  *
- * Adaptado por Rossana Baptista Queiroz
- * para as disciplinas de Processamento Gráfico/Computação Gráfica - Unisinos
- * Versão inicial: 7/4/2017
- * Última atualização em 07/03/2025
+ * Adaptado a partir do Hello3D do Módulo 1
+ * por Maurício Pereira da Costa - Computação Gráfica (Unisinos)
+ *
+ * Objetivos:
+ *  - Geometria de cubo (6 faces, cada uma com cor diferente)
+ *  - Rotação independente por eixo (teclas X, Y, Z)
+ *  - Translação via teclado: WASD (eixos X e Z), IJ (eixo Y)
+ *  - Escala uniforme: [ diminui, ] aumenta
+ *  - Instanciar múltiplos cubos: N adiciona, TAB alterna o selecionado
  */
 
 #include <iostream>
 #include <string>
+#include <vector>
 #include <assert.h>
 
 using namespace std;
@@ -18,11 +24,10 @@ using namespace std;
 // GLFW
 #include <GLFW/glfw3.h>
 
-//GLM
+// GLM
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-
 
 // Protótipo da função de callback de teclado
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode);
@@ -34,20 +39,21 @@ int setupGeometry();
 // Dimensões da janela (pode ser alterado em tempo de execução)
 const GLuint WIDTH = 1000, HEIGHT = 1000;
 
-// Código fonte do Vertex Shader (em GLSL): ainda hardcoded
+// Vertex Shader - agora com matrizes view e projection
 const GLchar* vertexShaderSource = "#version 450\n"
 "layout (location = 0) in vec3 position;\n"
 "layout (location = 1) in vec3 color;\n"
 "uniform mat4 model;\n"
+"uniform mat4 view;\n"
+"uniform mat4 projection;\n"
 "out vec4 finalColor;\n"
 "void main()\n"
 "{\n"
-//...pode ter mais linhas de código aqui!
-"gl_Position = model * vec4(position, 1.0);\n"
+"gl_Position = projection * view * model * vec4(position, 1.0);\n"
 "finalColor = vec4(color, 1.0);\n"
 "}\0";
 
-//Códifo fonte do Fragment Shader (em GLSL): ainda hardcoded
+// Fragment Shader
 const GLchar* fragmentShaderSource = "#version 450\n"
 "in vec4 finalColor;\n"
 "out vec4 color;\n"
@@ -56,171 +62,201 @@ const GLchar* fragmentShaderSource = "#version 450\n"
 "color = finalColor;\n"
 "}\n\0";
 
-bool rotateX=false, rotateY=false, rotateZ=false;
+// Estrutura que representa cada instância de cubo na cena
+// Cada cubo guarda seu próprio estado de transformação
+struct Cube {
+	glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f);
+	float scale = 1.0f;
+	// Eixo de rotação ativo: 0 = nenhum, 1 = X, 2 = Y, 3 = Z
+	int rotAxis = 0;
+	// Ângulo acumulado, para preservar a orientação ao parar/trocar o eixo
+	float angle = 0.0f;
+};
 
-// Função MAIN
+vector<Cube> cubes;
+int selected = 0;
+
+// Velocidades das transformações por segundo
+const float MOVE_SPEED = 1.5f;
+const float SCALE_SPEED = 1.5f;
+const float ROT_SPEED = 1.5f;
+
 int main()
 {
 	// Inicialização da GLFW
 	glfwInit();
 
-	//Muita atenção aqui: alguns ambientes não aceitam essas configurações
-	//Você deve adaptar para a versão do OpenGL suportada por sua placa
-	//Sugestão: comente essas linhas de código para desobrir a versão e
-	//depois atualize (por exemplo: 4.5 com 4 e 5)
-	//glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-	//glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-	//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-	//Essencial para computadores da Apple
-//#ifdef __APPLE__
-//	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-//#endif
-
 	// Criação da janela GLFW
-	GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Ola 3D -- Marurício Pereira da Costa", nullptr, nullptr);
+	GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Desafio M2 - Cubos Interativos -- Mauricio Pereira da Costa", nullptr, nullptr);
 	glfwMakeContextCurrent(window);
 
-	// Fazendo o registro da função de callback para a janela GLFW
 	glfwSetKeyCallback(window, key_callback);
 
-	// GLAD: carrega todos os ponteiros d funções da OpenGL
+	// GLAD: carrega todos os ponteiros das funções da OpenGL
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
 		std::cout << "Failed to initialize GLAD" << std::endl;
-
 	}
 
-	// Obtendo as informações de versão
-	const GLubyte* renderer = glGetString(GL_RENDERER); /* get renderer string */
-	const GLubyte* version = glGetString(GL_VERSION); /* version as a string */
+	const GLubyte* renderer = glGetString(GL_RENDERER);
+	const GLubyte* version = glGetString(GL_VERSION);
 	cout << "Renderer: " << renderer << endl;
 	cout << "OpenGL version supported " << version << endl;
 
-	// Definindo as dimensões da viewport com as mesmas dimensões da janela da aplicação
 	int width, height;
 	glfwGetFramebufferSize(window, &width, &height);
 	glViewport(0, 0, width, height);
 
-
-	// Compilando e buildando o programa de shader
 	GLuint shaderID = setupShader();
-
-	// Gerando um buffer simples, com a geometria de um triângulo
 	GLuint VAO = setupGeometry();
-
 
 	glUseProgram(shaderID);
 
-	glm::mat4 model = glm::mat4(1); //matriz identidade;
 	GLint modelLoc = glGetUniformLocation(shaderID, "model");
-	//
-	model = glm::rotate(model, /*(GLfloat)glfwGetTime()*/glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+	GLint viewLoc = glGetUniformLocation(shaderID, "view");
+	GLint projLoc = glGetUniformLocation(shaderID, "projection");
+
+	// Matriz de view: câmera fixa em (0, 0, 3) olhando para a origem
+	glm::mat4 view = glm::lookAt(
+		glm::vec3(0.0f, 0.0f, 3.0f),
+		glm::vec3(0.0f, 0.0f, 0.0f),
+		glm::vec3(0.0f, 1.0f, 0.0f)
+	);
+	glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+
+	// Matriz de projeção perspectiva
+	glm::mat4 projection = glm::perspective(
+		glm::radians(45.0f),
+		(float)width / (float)height,
+		0.1f, 100.0f
+	);
+	glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
 	glEnable(GL_DEPTH_TEST);
 
+	// Cubo inicial na cena
+	cubes.push_back(Cube());
 
-	// Loop da aplicação - "game loop"
+	float lastTime = (float)glfwGetTime();
+
+	// Loop da aplicação
 	while (!glfwWindowShouldClose(window))
 	{
-		// Checa se houveram eventos de input (key pressed, mouse moved etc.) e chama as funções de callback correspondentes
 		glfwPollEvents();
 
-		// Limpa o buffer de cor
-		glClearColor(1.0f, 1.0f, 1.0f, 1.0f); //cor de fundo
+		float now = (float)glfwGetTime();
+		float dt = now - lastTime;
+		lastTime = now;
+
+		// Leitura contínua das teclas para translação e escala do cubo selecionado
+		if (!cubes.empty())
+		{
+			Cube& c = cubes[selected];
+
+			// Translação - eixos X e Z (WASD)
+			if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) c.position.x -= MOVE_SPEED * dt;
+			if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) c.position.x += MOVE_SPEED * dt;
+			if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) c.position.z -= MOVE_SPEED * dt;
+			if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) c.position.z += MOVE_SPEED * dt;
+
+			// Translação - eixo Y (I sobe, J desce)
+			if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) c.position.y += MOVE_SPEED * dt;
+			if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS) c.position.y -= MOVE_SPEED * dt;
+
+			// Escala uniforme - [ diminui, ] aumenta
+			if (glfwGetKey(window, GLFW_KEY_LEFT_BRACKET) == GLFW_PRESS)
+				c.scale -= SCALE_SPEED * dt * c.scale;
+			if (glfwGetKey(window, GLFW_KEY_RIGHT_BRACKET) == GLFW_PRESS)
+				c.scale += SCALE_SPEED * dt * c.scale;
+			if (c.scale < 0.05f) c.scale = 0.05f;
+		}
+
+		// Limpa os buffers de cor e profundidade
+		glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		glLineWidth(10);
-		glPointSize(20);
-
-		float angle = (GLfloat)glfwGetTime();
-
-		model = glm::mat4(1); 
-		if (rotateX)
-		{
-			model = glm::rotate(model, angle, glm::vec3(1.0f, 0.0f, 0.0f));
-			
-		}
-		else if (rotateY)
-		{
-			model = glm::rotate(model, angle, glm::vec3(0.0f, 1.0f, 0.0f));
-
-		}
-		else if (rotateZ)
-		{
-			model = glm::rotate(model, angle, glm::vec3(0.0f, 0.0f, 1.0f));
-
-		}
-
-		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-		// Chamada de desenho - drawcall
-		// Poligono Preenchido - GL_TRIANGLES
-		
 		glBindVertexArray(VAO);
-		glDrawArrays(GL_TRIANGLES, 0, 18);
 
-		// Chamada de desenho - drawcall
-		// CONTORNO - GL_LINE_LOOP
-		
-		glDrawArrays(GL_POINTS, 0, 18);
+		// Desenha cada cubo com sua matriz de modelo própria
+		for (size_t i = 0; i < cubes.size(); i++)
+		{
+			Cube& c = cubes[i];
+
+			// Acumula o ângulo apenas se o cubo estiver rotacionando
+			if (c.rotAxis != 0) c.angle += ROT_SPEED * dt;
+
+			glm::mat4 model = glm::mat4(1.0f);
+			model = glm::translate(model, c.position);
+
+			if (c.rotAxis == 1)
+				model = glm::rotate(model, c.angle, glm::vec3(1.0f, 0.0f, 0.0f));
+			else if (c.rotAxis == 2)
+				model = glm::rotate(model, c.angle, glm::vec3(0.0f, 1.0f, 0.0f));
+			else if (c.rotAxis == 3)
+				model = glm::rotate(model, c.angle, glm::vec3(0.0f, 0.0f, 1.0f));
+
+			model = glm::scale(model, glm::vec3(c.scale));
+
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+			glDrawArrays(GL_TRIANGLES, 0, 36);
+		}
+
 		glBindVertexArray(0);
-
-		// Troca os buffers da tela
 		glfwSwapBuffers(window);
 	}
-	// Pede pra OpenGL desalocar os buffers
+
 	glDeleteVertexArrays(1, &VAO);
-	// Finaliza a execução da GLFW, limpando os recursos alocados por ela
 	glfwTerminate();
 	return 0;
 }
 
-// Função de callback de teclado - só pode ter uma instância (deve ser estática se
-// estiver dentro de uma classe) - É chamada sempre que uma tecla for pressionada
-// ou solta via GLFW
+// Callback de eventos discretos: rotação, instanciar novo cubo, alternar seleção
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode)
 {
-	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+	if (action != GLFW_PRESS) return;
+
+	if (key == GLFW_KEY_ESCAPE)
 		glfwSetWindowShouldClose(window, GL_TRUE);
 
-	if (key == GLFW_KEY_X && action == GLFW_PRESS)
+	if (cubes.empty()) return;
+	Cube& c = cubes[selected];
+
+	// Alterna o eixo de rotação do cubo selecionado
+	// Pressionar a mesma tecla novamente para o cubo
+	if (key == GLFW_KEY_X) c.rotAxis = (c.rotAxis == 1) ? 0 : 1;
+	if (key == GLFW_KEY_Y) c.rotAxis = (c.rotAxis == 2) ? 0 : 2;
+	if (key == GLFW_KEY_Z) c.rotAxis = (c.rotAxis == 3) ? 0 : 3;
+
+	// N - instancia um novo cubo, deslocado para não sobrepor o anterior
+	if (key == GLFW_KEY_N)
 	{
-		rotateX = true;
-		rotateY = false;
-		rotateZ = false;
+		Cube novo;
+		novo.position = glm::vec3(
+			-1.0f + 0.4f * (float)cubes.size(),
+			0.0f,
+			0.0f
+		);
+		novo.scale = 0.5f;
+		cubes.push_back(novo);
+		selected = (int)cubes.size() - 1;
+		cout << "Novo cubo instanciado. Total: " << cubes.size()
+			 << " | Selecionado: " << selected << endl;
 	}
 
-	if (key == GLFW_KEY_Y && action == GLFW_PRESS)
+	// TAB - alterna o cubo selecionado (recebe os comandos)
+	if (key == GLFW_KEY_TAB)
 	{
-		rotateX = false;
-		rotateY = true;
-		rotateZ = false;
+		selected = (selected + 1) % (int)cubes.size();
+		cout << "Cubo selecionado: " << selected << endl;
 	}
-
-	if (key == GLFW_KEY_Z && action == GLFW_PRESS)
-	{
-		rotateX = false;
-		rotateY = false;
-		rotateZ = true;
-	}
-
-
-
 }
 
-//Esta função está basntante hardcoded - objetivo é compilar e "buildar" um programa de
-// shader simples e único neste exemplo de código
-// O código fonte do vertex e fragment shader está nos arrays vertexShaderSource e
-// fragmentShader source no iniçio deste arquivo
-// A função retorna o identificador do programa de shader
 int setupShader()
 {
-	// Vertex shader
 	GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
 	glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
 	glCompileShader(vertexShader);
-	// Checando erros de compilação (exibição via log no terminal)
 	GLint success;
 	GLchar infoLog[512];
 	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
@@ -229,23 +265,19 @@ int setupShader()
 		glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
 		std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
 	}
-	// Fragment shader
 	GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
 	glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
 	glCompileShader(fragmentShader);
-	// Checando erros de compilação (exibição via log no terminal)
 	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
 	if (!success)
 	{
 		glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
 		std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
 	}
-	// Linkando os shaders e criando o identificador do programa de shader
 	GLuint shaderProgram = glCreateProgram();
 	glAttachShader(shaderProgram, vertexShader);
 	glAttachShader(shaderProgram, fragmentShader);
 	glLinkProgram(shaderProgram);
-	// Checando por erros de linkagem
 	glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
 	if (!success) {
 		glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
@@ -257,91 +289,83 @@ int setupShader()
 	return shaderProgram;
 }
 
-// Esta função está bastante harcoded - objetivo é criar os buffers que armazenam a 
-// geometria de um triângulo
-// Apenas atributo coordenada nos vértices
-// 1 VBO com as coordenadas, VAO com apenas 1 ponteiro para atributo
-// A função retorna o identificador do VAO
+// Geometria do cubo: 6 faces, cada uma composta por 2 triângulos (6 vértices),
+// com uma cor distinta por face para facilitar a identificação visual.
+// Layout do VBO (mesmo padrão do esquema do Módulo 1):
+//   atributo 0 -> posição (x, y, z)  - 3 floats, offset 0
+//   atributo 1 -> cor     (r, g, b)  - 3 floats, offset 12 bytes
+//   stride = 6 * sizeof(GLfloat)
 int setupGeometry()
 {
-	// Aqui setamos as coordenadas x, y e z do triângulo e as armazenamos de forma
-	// sequencial, já visando mandar para o VBO (Vertex Buffer Objects)
-	// Cada atributo do vértice (coordenada, cores, coordenadas de textura, normal, etc)
-	// Pode ser arazenado em um VBO único ou em VBOs separados
 	GLfloat vertices[] = {
+		// Face frontal (+Z) - vermelho
+		-0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f,
+		 0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f,
+		 0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 0.0f,
+		-0.5f, -0.5f,  0.5f,  1.0f, 0.0f, 0.0f,
+		 0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 0.0f,
+		-0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 0.0f,
 
-		//Base da pirâmide: 2 triângulos
-		//x    y    z    r    g    b
-		-0.5, -0.5, -0.5, 1.0, 1.0, 0.0,
-		-0.5, -0.5,  0.5, 0.0, 1.0, 1.0,
-		 0.5, -0.5, -0.5, 1.0, 0.0, 1.0,
+		// Face traseira (-Z) - verde
+		-0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,
+		-0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 0.0f,
+		 0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 0.0f,
+		-0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,
+		 0.5f,  0.5f, -0.5f,  0.0f, 1.0f, 0.0f,
+		 0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 0.0f,
 
-		 -0.5, -0.5, 0.5, 1.0, 1.0, 0.0,
-		  0.5, -0.5,  0.5, 0.0, 1.0, 1.0,
-		  0.5, -0.5, -0.5, 1.0, 0.0, 1.0,
+		// Face esquerda (-X) - azul
+		-0.5f, -0.5f, -0.5f,  0.0f, 0.0f, 1.0f,
+		-0.5f, -0.5f,  0.5f,  0.0f, 0.0f, 1.0f,
+		-0.5f,  0.5f,  0.5f,  0.0f, 0.0f, 1.0f,
+		-0.5f, -0.5f, -0.5f,  0.0f, 0.0f, 1.0f,
+		-0.5f,  0.5f,  0.5f,  0.0f, 0.0f, 1.0f,
+		-0.5f,  0.5f, -0.5f,  0.0f, 0.0f, 1.0f,
 
-		 //
-		 -0.5, -0.5, -0.5, 1.0, 1.0, 0.0,
-		  0.0,  0.5,  0.0, 1.0, 1.0, 0.0,
-		  0.5, -0.5, -0.5, 1.0, 1.0, 0.0,
+		// Face direita (+X) - amarelo
+		 0.5f, -0.5f, -0.5f,  1.0f, 1.0f, 0.0f,
+		 0.5f,  0.5f, -0.5f,  1.0f, 1.0f, 0.0f,
+		 0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.0f,
+		 0.5f, -0.5f, -0.5f,  1.0f, 1.0f, 0.0f,
+		 0.5f,  0.5f,  0.5f,  1.0f, 1.0f, 0.0f,
+		 0.5f, -0.5f,  0.5f,  1.0f, 1.0f, 0.0f,
 
-		  -0.5, -0.5, -0.5, 1.0, 0.0, 1.0,
-		  0.0,  0.5,  0.0, 1.0, 0.0, 1.0,
-		  -0.5, -0.5, 0.5, 1.0, 0.0, 1.0,
+		// Face superior (+Y) - magenta
+		-0.5f,  0.5f, -0.5f,  1.0f, 0.0f, 1.0f,
+		-0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 1.0f,
+		 0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 1.0f,
+		-0.5f,  0.5f, -0.5f,  1.0f, 0.0f, 1.0f,
+		 0.5f,  0.5f,  0.5f,  1.0f, 0.0f, 1.0f,
+		 0.5f,  0.5f, -0.5f,  1.0f, 0.0f, 1.0f,
 
-		   -0.5, -0.5, 0.5, 1.0, 1.0, 0.0,
-		  0.0,  0.5,  0.0, 1.0, 1.0, 0.0,
-		  0.5, -0.5, 0.5, 1.0, 1.0, 0.0,
-
-		   0.5, -0.5, 0.5, 0.0, 1.0, 1.0,
-		  0.0,  0.5,  0.0, 0.0, 1.0, 1.0,
-		  0.5, -0.5, -0.5, 0.0, 1.0, 1.0,
-
-
+		// Face inferior (-Y) - ciano
+		-0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 1.0f,
+		 0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 1.0f,
+		 0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,
+		-0.5f, -0.5f, -0.5f,  0.0f, 1.0f, 1.0f,
+		 0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,
+		-0.5f, -0.5f,  0.5f,  0.0f, 1.0f, 1.0f,
 	};
 
 	GLuint VBO, VAO;
 
-	//Geração do identificador do VBO
 	glGenBuffers(1, &VBO);
-
-	//Faz a conexão (vincula) do buffer como um buffer de array
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-
-	//Envia os dados do array de floats para o buffer da OpenGl
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-	//Geração do identificador do VAO (Vertex Array Object)
 	glGenVertexArrays(1, &VAO);
-
-	// Vincula (bind) o VAO primeiro, e em seguida  conecta e seta o(s) buffer(s) de vértices
-	// e os ponteiros para os atributos 
 	glBindVertexArray(VAO);
-	
-	//Para cada atributo do vertice, criamos um "AttribPointer" (ponteiro para o atributo), indicando: 
-	// Localização no shader * (a localização dos atributos devem ser correspondentes no layout especificado no vertex shader)
-	// Numero de valores que o atributo tem (por ex, 3 coordenadas xyz) 
-	// Tipo do dado
-	// Se está normalizado (entre zero e um)
-	// Tamanho em bytes 
-	// Deslocamento a partir do byte zero 
-	
-	//Atributo posição (x, y, z)
+
+	// Atributo posição (x, y, z) - location 0
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (GLvoid*)0);
 	glEnableVertexAttribArray(0);
 
-	//Atributo cor (r, g, b)
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (GLvoid*)(3*sizeof(GLfloat)));
+	// Atributo cor (r, g, b) - location 1
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), (GLvoid*)(3 * sizeof(GLfloat)));
 	glEnableVertexAttribArray(1);
 
-
-	// Observe que isso é permitido, a chamada para glVertexAttribPointer registrou o VBO como o objeto de buffer de vértice 
-	// atualmente vinculado - para que depois possamos desvincular com segurança
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-	// Desvincula o VAO (é uma boa prática desvincular qualquer buffer ou array para evitar bugs medonhos)
 	glBindVertexArray(0);
 
 	return VAO;
 }
-
