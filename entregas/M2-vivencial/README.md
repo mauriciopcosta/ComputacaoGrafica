@@ -41,3 +41,7 @@ cd build
 (o `$env:PATH` é pras DLLs do GCC; sem ele o exe fecha sozinho)
 
 Código-fonte: [`src/desafios/M2_Vivencial_MultiOBJ.cpp`](../../src/desafios/M2_Vivencial_MultiOBJ.cpp)
+
+## Resultado
+
+![Print da Atividade Vivencial M2](print.png)
