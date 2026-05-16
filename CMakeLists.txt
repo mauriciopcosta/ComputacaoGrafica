@@ -52,6 +52,7 @@ set(EXERCISES_EXEMPLOS
 set(EXERCISES_DESAFIOS
     M2_CubosInterativos
     M2_Vivencial_MultiOBJ
+    M3_TexturasOBJ
 )
 
 add_compile_options(-Wno-pragmas)

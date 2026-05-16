@@ -47,6 +47,7 @@ Siga as instruções detalhadas em [docs/GettingStarted.md](docs/GettingStarted.
 - [Desafio M1](entregas/M1/README.md)
 - [Desafio M2 — Cubos Interativos](entregas/M2/README.md)
 - [Atividade Vivencial M2 — Multi OBJ](entregas/M2-vivencial/README.md)
+- [Desafio M3 — Texturas e Materiais](entregas/M3/README.md)
 
 ## ⚠️ **IMPORTANTE: Baixar a GLAD Manualmente**
 Para que o projeto funcione corretamente, é necessário **baixar a GLAD manualmente** utilizando o **GLAD Generator**.
