@@ -62,3 +62,7 @@ cd build
 ```
 
 Código-fonte: [`src/desafios/M3_TexturasOBJ.cpp`](../../src/desafios/M3_TexturasOBJ.cpp)
+
+## Resultado
+
+![Print do Desafio M3](print.png)
