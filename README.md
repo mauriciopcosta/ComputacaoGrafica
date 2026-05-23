@@ -48,6 +48,8 @@ Siga as instruções detalhadas em [docs/GettingStarted.md](docs/GettingStarted.
 - [Desafio M2 — Cubos Interativos](entregas/M2/README.md)
 - [Atividade Vivencial M2 — Multi OBJ](entregas/M2-vivencial/README.md)
 - [Desafio M3 — Texturas e Materiais](entregas/M3/README.md)
+- [Desafio M4 — Iluminação (Phong)](entregas/M4/README.md)
+- [Atividade Vivencial M4 — Iluminação de 3 Pontos](entregas/M4-vivencial/README.md)
 
 ## ⚠️ **IMPORTANTE: Baixar a GLAD Manualmente**
 Para que o projeto funcione corretamente, é necessário **baixar a GLAD manualmente** utilizando o **GLAD Generator**.
