@@ -55,6 +55,7 @@ set(EXERCISES_DESAFIOS
     M3_TexturasOBJ
     M4_Phong
     M4_Vivencial_TresLuzes
+    M5_CameraPrimeiraPessoa
 )
 
 add_compile_options(-Wno-pragmas)
