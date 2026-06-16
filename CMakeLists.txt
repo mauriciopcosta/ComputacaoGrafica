@@ -56,6 +56,7 @@ set(EXERCISES_DESAFIOS
     M4_Phong
     M4_Vivencial_TresLuzes
     M5_CameraPrimeiraPessoa
+    M6_Trajetorias
 )
 
 add_compile_options(-Wno-pragmas)
