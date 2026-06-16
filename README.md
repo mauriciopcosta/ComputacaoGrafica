@@ -51,6 +51,7 @@ Siga as instruções detalhadas em [docs/GettingStarted.md](docs/GettingStarted.
 - [Desafio M4 — Iluminação (Phong)](entregas/M4/README.md)
 - [Atividade Vivencial M4 — Iluminação de 3 Pontos](entregas/M4-vivencial/README.md)
 - [Desafio M5 — Câmera em 1ª Pessoa](entregas/M5/README.md)
+- [Desafio M6 — Trajetórias](entregas/M6/README.md)
 
 ## ⚠️ **IMPORTANTE: Baixar a GLAD Manualmente**
 Para que o projeto funcione corretamente, é necessário **baixar a GLAD manualmente** utilizando o **GLAD Generator**.
