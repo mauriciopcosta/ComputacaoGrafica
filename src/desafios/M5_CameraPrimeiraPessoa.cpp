@@ -1,7 +1,23 @@
 /* Desafio Modulo 5 - Camera em primeira pessoa
  *
- * Peguei a cena do M4 (Phong) e troquei o lookAt fixo por uma classe Camera
- * que da pra navegar com WASD + mouse. Autor: Mauricio Pereira da Costa.
+ * Mauricio Pereira da Costa - Computacao Grafica (Unisinos)
+ *
+ * Até o M4 o observador era PARADO: eu montava a view uma vez com lookAt e
+ * mexia só nos objetos. Aqui eu transformei a câmera numa coisa que ANDA pela
+ * cena (estilo jogo em 1ª pessoa). O que mudou:
+ *  - criei uma classe Camera que guarda onde ela está (position) e pra onde
+ *    olha (yaw/pitch + os vetores front/right/up). Ela sabe se Mover e Rotacionar;
+ *  - a view deixou de ser fixa: todo frame eu chamo lookAt(pos, pos+front, up);
+ *  - troquei pra projeção perspectiva de verdade e o scroll mexe no FOV (zoom);
+ *  - prendi o mouse na tela (CURSOR_DISABLED) pra ele virar o controle de olhar;
+ *  - espalhei vários modelos numa grade indo pro fundo (-Z), assim andar pra
+ *    frente deixa a perspectiva bem visível (coisa longe fica menor).
+ *
+ * A iluminação de Phong do M4 continua igual; a única diferença é que o
+ * cameraPos que vai pro shader agora é a posição real da câmera que se move.
+ *
+ * Controles: WASD anda | Space/Ctrl sobe-desce | Shift corre | mouse olha |
+ *            scroll zoom | G wireframe | ESC sai
  */
 
 #include <iostream>
@@ -138,6 +154,9 @@ public:
         updateVectors();
     }
 
+    // A view sai daqui: lookAt(de onde estou, ponto logo à minha frente, cima).
+    // "position + front" é o truque: como front é pra onde olho, somar à posição
+    // dá um alvo que anda junto comigo.
     glm::mat4 viewMatrix() const {
         return glm::lookAt(position, position + front, up);
     }
@@ -176,7 +195,10 @@ public:
     }
 
 private:
-    // Recalcula front a partir dos angulos de Euler e, em seguida, right e up.
+    // A partir do yaw/pitch eu remonto pra onde a câmera olha (front) com
+    // trigonometria, e daí tiro o right (produto vetorial de front com o "cima"
+    // do mundo) e o up. Refaço isso toda vez que o mouse mexe, pra base
+    // continuar certinha (os 3 vetores perpendiculares entre si).
     void updateVectors() {
         glm::vec3 f;
         f.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
@@ -207,6 +229,9 @@ struct Mesh {
 
 // Instancia da malha posicionada na cena (varias instancias podem apontar
 // para a mesma malha; a profundidade entre elas eh o que mostra a perspectiva).
+// Separei "malha" de "instância": a malha (Mesh, acima) é carregada uma vez e
+// uma Instance é só uma cópia posicionada apontando pra uma malha. Assim eu
+// boto o mesmo modelo em vários lugares sem recarregar o .obj.
 struct Instance {
     int       mesh;
     glm::vec3 position;
@@ -535,7 +560,10 @@ int main() {
         glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // View e projection vem da camera, recalculadas a cada frame.
+        // Agora a view e a projection mudam a cada frame (a câmera andou/girou e
+        // o FOV pode ter mudado no scroll), então remonto e reenvio as duas todo
+        // frame - diferente dos módulos anteriores, onde mandava uma vez só.
+        // Também mando o cameraPos atualizado pro shader, pra especular bater certo.
         glm::mat4 view = camera.viewMatrix();
         glm::mat4 projection = glm::perspective(
             glm::radians(camera.fov), (float)width / (float)height, 0.1f, 100.0f);

@@ -1,19 +1,20 @@
-/* Atividade Vivencial - Modulo 4
+/* Atividade Vivencial - Modulo 4  (Iluminacao de 3 pontos)
  *
- * Estende o desafio M4 (Phong) com a tecnica de iluminacao de 3 pontos:
- *   - Luz principal (key)    : a mais intensa, define o tom da cena
- *   - Luz de preenchimento (fill): suaviza as sombras da key, menos intensa
- *   - Luz de fundo (back)    : separa o objeto do fundo, vinda de tras
+ * Mauricio Pereira da Costa - Computacao Grafica (Unisinos)
  *
- * As 3 luzes sao pontuais e posicionadas AUTOMATICAMENTE a partir da posicao
- * e da escala do objeto principal da cena (o objeto selecionado). Quando o
- * objeto se move/escala, as luzes acompanham. Cada luz pode ser ligada/
- * desligada por tecla.
+ * No M4 eu tinha UMA luz; aqui montei a iluminacao de 3 pontos, aquela clássica
+ * de estudio de foto/cinema:
+ *   - key (principal): a mais forte, define o tom da cena;
+ *   - fill (preenchimento): fraquinha, suaviza as sombras que a key cria;
+ *   - back (fundo): vem de trás, faz o contorno e separa o objeto do fundo.
  *
- * Acrescenta tambem um fator de atenuacao por distancia na parcela difusa
- * (e especular): Fatt = 1 / (Kc + Kl*d + Kq*d^2).
+ * O detalhe legal é que eu NÃO chuto as posições das luzes: a função
+ * updateLights() calcula elas em volta do objeto selecionado, e o afastamento
+ * escala com o tamanho dele - então se eu mexo ou aumento o objeto, as luzes
+ * acompanham. Posso ligar/desligar cada uma com 1/2/3.
  *
- * Autor: Mauricio Pereira da Costa - Computacao Grafica (Unisinos)
+ * Também botei atenuação por distância: Fatt = 1/(Kc + Kl*d + Kq*d^2). Sem ela
+ * as 3 luzes chegavam com a mesma força e o efeito de 3 pontos sumia.
  *
  * Controles:
  *   TAB                cicla o objeto principal (as luzes seguem ele)
@@ -82,9 +83,11 @@ void main() {
 }
 )";
 
-// Fragment shader: Phong com 3 fontes de luz pontuais. A componente ambiente
-// entra uma vez; difusa e especular sao somadas por luz, cada uma ponderada
-// pela intensidade da luz e por um fator de atenuacao Fatt(distancia).
+// Fragment shader: mesmo Phong do M4, mas agora dentro de um LOOP que passa
+// pelas 3 luzes. A ambiente eu somo só uma vez; a difusa e a especular eu vou
+// ACUMULANDO luz por luz, e cada uma é pesada pela sua intensidade e pela
+// atenuação Fatt (quanto mais longe a luz, menos ela conta). Se a luz está
+// desligada (lightOn==0), eu pulo ela.
 const GLchar* fragmentShaderSource = R"(
 #version 450
 #define NUM_LIGHTS 3
@@ -136,19 +139,21 @@ void main() {
     vec3 specularTotal = vec3(0.0);
 
     for (int i = 0; i < NUM_LIGHTS; ++i) {
-        if (lightOn[i] == 0) continue;
+        if (lightOn[i] == 0) continue;   // luz apagada -> nem calculo
 
+        // d = distância até a luz; L = direção até ela (normalizada).
         vec3  toLight = lightPos[i] - fragPos;
         float d       = length(toLight);
         vec3  L       = toLight / max(d, 0.0001);
 
+        // Atenuação: divisor cresce com a distância -> luz longe ilumina menos.
         float fatt = 1.0 / (attConst + attLinear * d + attQuad * d * d);
 
-        // Difusa
+        // Mesma difusa do M4, só que multiplicada pela atenuação e intensidade.
         float diff = max(dot(N, L), 0.0);
         diffuseTotal += fatt * lightIntensity[i] * kd * diff * lightColor[i];
 
-        // Especular (Phong)
+        // Mesma especular do M4, idem. Vou somando no total.
         vec3  R = reflect(-L, N);
         float spec = pow(max(dot(R, V), 0.0), q);
         specularTotal += fatt * lightIntensity[i] * ks * spec * lightColor[i];
@@ -186,7 +191,9 @@ enum class Mode { Translate, Rotate, Scale };
 Mode currentMode = Mode::Translate;
 bool showWireframe = false;
 
-// Estado das 3 luzes (posicao recalculada por frame a partir do objeto principal)
+// Estado das 3 luzes. A posição é recalculada todo frame (em updateLights);
+// cor e intensidade eu escolhi pra imitar a iluminação de 3 pontos de verdade:
+// key meio quente e forte, fill meio fria e fraca, back branca e média.
 glm::vec3 lightPos[NUM_LIGHTS];
 glm::vec3 lightColor[NUM_LIGHTS] = {
     glm::vec3(1.0f, 0.97f, 0.92f),  // key  - branca levemente quente
@@ -194,7 +201,7 @@ glm::vec3 lightColor[NUM_LIGHTS] = {
     glm::vec3(1.0f, 1.0f, 1.0f)     // back - branca
 };
 float lightIntensity[NUM_LIGHTS] = { 1.0f, 0.45f, 0.8f }; // key forte, fill suave, back media
-int   lightOn[NUM_LIGHTS]        = { 1, 1, 1 };
+int   lightOn[NUM_LIGHTS]        = { 1, 1, 1 };           // todas ligadas no início
 const char* lightNames[NUM_LIGHTS] = { "PRINCIPAL (key)", "PREENCHIMENTO (fill)", "FUNDO (back)" };
 
 // Atenuacao (constantes definidas pelo usuario - slides do M4)
@@ -215,9 +222,10 @@ static const char* modeName(Mode m) {
     return "?";
 }
 
-// Posiciona as 3 luzes em torno do objeto principal seguindo a tecnica de
-// 3 pontos. O "raio" base escala com o tamanho do objeto, para que as luzes
-// fiquem proporcionalmente afastadas quando ele cresce/diminui.
+// Aqui eu coloco as 3 luzes ao redor do objeto principal. Pego o centro dele
+// (c) e calculo uma distância que cresce junto com a escala do objeto (uso o
+// maior eixo) - assim a iluminação acompanha quando ele aumenta/diminui. Depois
+// é só somar deslocamentos fixos em direções diferentes pra cada luz.
 void updateLights(const OBJ& main) {
     glm::vec3 c = main.position;
     float r = glm::max(glm::max(main.scale.x, main.scale.y), main.scale.z);
@@ -442,7 +450,9 @@ int main() {
     glUniform1f(attLinearLoc, attLinear);
     glUniform1f(attQuadLoc,   attQuad);
 
-    // Cor e intensidade das luzes nao mudam em runtime -> envia uma vez
+    // Cor e intensidade não mudam enquanto roda, então mando as 3 de uma vez
+    // aqui fora do loop. Repara que pra mandar um array de vec3 eu passo o
+    // endereço do primeiro (lightColor[0]) e o tamanho NUM_LIGHTS.
     glUniform3fv(lightColorLoc, NUM_LIGHTS, glm::value_ptr(lightColor[0]));
     glUniform1fv(lightIntLoc,   NUM_LIGHTS, lightIntensity);
 
@@ -551,7 +561,8 @@ int main() {
             if (o.rotOn.z) o.angles.z += ROT_SPEED * dt;
         }
 
-        // Recalcula as 3 luzes a partir do objeto principal selecionado
+        // Toda hora recoloco as luzes em volta do objeto selecionado e reenvio
+        // as posições + quais estão ligadas (essas duas coisas mudam em runtime).
         updateLights(objects[selected]);
         glUniform3fv(lightPosLoc, NUM_LIGHTS, glm::value_ptr(lightPos[0]));
         glUniform1iv(lightOnLoc,  NUM_LIGHTS, lightOn);
@@ -646,7 +657,9 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         return;
     }
 
-    // Liga/desliga cada uma das 3 luzes
+    // 1/2/3 ligam/desligam a key, a fill e a back. O "1 - lightOn" é meu jeito
+    // de inverter um valor 0/1. Bom pra mostrar a contribuição de cada luz
+    // sozinha (ex.: só a back ligada deixa claro o efeito de contorno).
     if (key == GLFW_KEY_1 || key == GLFW_KEY_2 || key == GLFW_KEY_3) {
         int i = (key == GLFW_KEY_1) ? 0 : (key == GLFW_KEY_2) ? 1 : 2;
         lightOn[i] = 1 - lightOn[i];

@@ -1,17 +1,27 @@
-/* Atividade Vivencial - Modulo 2
+/* Atividade Vivencial - Modulo 2  (Multi-OBJ)
  *
- * Extensao do desafio M2: carrega todos os arquivos .obj presentes em
- * assets/Modelos3D/ e permite selecionar um objeto e aplicar transformacoes
- * (translacao, rotacao e escala) sobre ele via teclado.
+ * Mauricio Pereira da Costa - Computacao Grafica (Unisinos)
  *
- * Autor: Mauricio Pereira da Costa - Computacao Grafica (Unisinos)
+ * Aqui eu parei de desenhar o cubo "na mao" (como no M2) e passei a CARREGAR
+ * arquivos .obj de verdade. O programa varre a pasta assets/Modelos3D/ e abre
+ * TODOS os .obj que achar - hoje tem Cube, Suzanne e SuzanneSubdiv1 - e mostra
+ * os tres alinhados, cada um com uma cor da minha paleta.
+ *
+ * A leitura do .obj eu fiz reaproveitando o loadSimpleOBJ que a professora
+ * passou; minha unica mudanca foi receber a cor por parametro.
+ *
+ * Pras transformacoes eu inventei um esquema de MODO: aperto T/R/S pra escolher
+ * se as teclas vao transladar, rotacionar ou escalar. Fiz assim porque com 3
+ * tipos de operacao as teclas comecavam a brigar entre si (o S, por ex., ia
+ * bater com o WASD se fosse atalho direto).
  *
  * Controles:
- *   TAB         : cicla a selecao para o proximo objeto
- *   T           : entra em modo TRANSLACAO  (setas X/Y, PageUp/PageDown -> Z)
- *   R           : entra em modo ROTACAO    (X/Y/Z togglam rotacao no eixo)
- *   S           : entra em modo ESCALA     (X/Y/Z aumentam, Shift inverte;
- *                                           [ ] aplicam escala uniforme)
+ *   TAB         : passa a selecao pro proximo objeto
+ *   T           : modo TRANSLACAO  (setas mexem X/Y, PageUp/PageDown -> Z)
+ *   R           : modo ROTACAO    (X/Y/Z ligam/desligam giro no eixo)
+ *   S           : modo ESCALA     (X/Y/Z aumentam, Shift inverte;
+ *                                  [ ] fazem escala uniforme)
+ *   L           : liga/desliga as arestas brancas (wireframe por cima)
  *   ESC         : sai
  */
 
@@ -56,6 +66,10 @@ void main() {
 }
 )";
 
+// Fragment shader. Aqui entrou meu truque pra mostrar QUAL objeto está
+// selecionado: o uniform 'tint' multiplica a cor. Eu mando 1.6 pro selecionado
+// (fica mais "aceso") e 0.85 pro resto (fica apagadinho). O 'wireframe' é uma
+// flag pra quando eu desenho as arestas por cima: aí pinto tudo de branco.
 const GLchar* fragmentShaderSource = R"(
 #version 450
 in vec4 vColor;
@@ -68,24 +82,27 @@ void main() {
 }
 )";
 
-// --- Modelo ---
+// Cada objeto carregado vira um OBJ. Guardo aqui o VAO (a malha na GPU) e o
+// estado de transformacao dele, igual fiz com o Cube no M2 - só que agora a
+// rotacao é por eixo separado (posso girar em X e Y ao mesmo tempo).
 struct OBJ {
     string name;
     GLuint VAO = 0;
     int nVertices = 0;
     glm::vec3 position = glm::vec3(0.0f);
     glm::vec3 scale    = glm::vec3(1.0f);
-    glm::vec3 angles   = glm::vec3(0.0f); // angulo acumulado por eixo
-    glm::ivec3 rotOn   = glm::ivec3(0);   // 1 = girando naquele eixo
+    glm::vec3 angles   = glm::vec3(0.0f); // angulo que já acumulei em cada eixo
+    glm::ivec3 rotOn   = glm::ivec3(0);   // 1 = esse eixo está girando
 };
 
 vector<OBJ> objects;
-int selected = 0;
+int selected = 0;   // indice do objeto que está recebendo os comandos
 
+// O "modo" decide o que as teclas fazem. Troco com T/R/S.
 enum class Mode { Translate, Rotate, Scale };
 Mode currentMode = Mode::Translate;
 
-bool showWireframe = true; // L alterna globalmente
+bool showWireframe = true; // L liga/desliga pra todos de uma vez
 
 const float MOVE_SPEED  = 1.5f;
 const float ROT_SPEED   = 1.5f;
@@ -131,6 +148,9 @@ int main() {
     GLint tintLoc      = glGetUniformLocation(shaderID, "tint");
     GLint wireframeLoc = glGetUniformLocation(shaderID, "wireframe");
 
+    // Camera ainda fixa (igual ao M2): subi um pouco (y=1.5) e afastei (z=6)
+    // pros tres modelos caberem na tela. Mando view e projection uma vez só,
+    // porque elas não mudam aqui.
     glm::mat4 view = glm::lookAt(
         glm::vec3(0.0f, 1.5f, 6.0f),
         glm::vec3(0.0f, 0.0f, 0.0f),
@@ -143,7 +163,7 @@ int main() {
 
     glEnable(GL_DEPTH_TEST);
 
-    // --- Carrega todos os .obj de assets/Modelos3D ---
+    // --- Aqui eu leio a pasta e carrego um .obj por arquivo ---
     const string modelsDir = "../assets/Modelos3D";
     vector<glm::vec3> palette = {
         {1.0f, 0.35f, 0.35f},
@@ -160,6 +180,9 @@ int main() {
         return -1;
     }
 
+    // Uso o directory_iterator do <filesystem> (C++17) pra listar a pasta e
+    // fico só com os .obj. Ordeno alfabeticamente pra a ordem ser sempre a
+    // mesma (senão o sistema pode entregar os arquivos em ordem aleatória).
     vector<fs::path> objPaths;
     for (const auto& entry : fs::directory_iterator(modelsDir)) {
         if (entry.is_regular_file() && entry.path().extension() == ".obj")
@@ -172,6 +195,8 @@ int main() {
         return -1;
     }
 
+    // Espalho os modelos numa fila no eixo X, centralizada na origem, dando
+    // uma cor da paleta pra cada um.
     int idx = 0;
     float spacing = 2.2f;
     float startX  = -spacing * (objPaths.size() - 1) * 0.5f;
@@ -207,7 +232,8 @@ int main() {
 
         OBJ& sel = objects[selected];
 
-        // --- Entrada continua dependente do modo ---
+        // --- Aqui é a entrada "segurando a tecla", e o que ela faz depende
+        //     do modo atual. Só mexe no objeto selecionado (sel). ---
         if (currentMode == Mode::Translate) {
             if (glfwGetKey(window, GLFW_KEY_LEFT)  == GLFW_PRESS) sel.position.x -= MOVE_SPEED * dt;
             if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) sel.position.x += MOVE_SPEED * dt;
@@ -251,6 +277,9 @@ int main() {
 
         for (size_t i = 0; i < objects.size(); ++i) {
             OBJ& o = objects[i];
+            // Monto a model deste objeto: transladar -> girar nos 3 eixos ->
+            // escalar. Cada objeto tem o VAO dele, então troco o VAO antes de
+            // desenhar e mando a model nova pro shader.
             glm::mat4 model(1.0f);
             model = glm::translate(model, o.position);
             model = glm::rotate(model, o.angles.x, glm::vec3(1, 0, 0));
@@ -292,6 +321,9 @@ int main() {
     return 0;
 }
 
+// Callback de teclas: aqui ficam as ações de "apertou uma vez" - trocar de
+// objeto (TAB), trocar de modo (T/R/S), ligar wireframe (L) e, no modo rotação,
+// ligar/desligar o giro em cada eixo. O mover/escalar contínuo NÃO fica aqui.
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (action != GLFW_PRESS) return;
 
@@ -352,8 +384,13 @@ GLuint setupShader() {
     return prog;
 }
 
-// Adaptado do snippet LoadSimpleOBJ da professora Rossana Baptista Queiroz.
-// Diferenca: a cor por vertice e parametrizada (em vez de hardcoded).
+// Este é o parser do .obj (adaptei do snippet LoadSimpleOBJ da professora; o
+// que mudei foi passar a cor por parâmetro, antes era fixa).
+// A ideia: leio linha a linha. "v" é posição, "vt" textura, "vn" normal - guardo
+// cada um numa lista. Quando chega o "f" (face), ele vem como "v/vt/vn" e os
+// números são ÍNDICES (base 1) pra essas listas. Aqui no M2-vivencial eu só uso
+// o índice da posição (vt/vn vão entrar nos próximos módulos). Pra cada vértice
+// da face eu empilho no vBuffer: x,y,z + a cor. No fim viro isso num VAO.
 GLuint loadSimpleOBJ(const string& filePATH, int& nVertices, glm::vec3 color) {
     vector<glm::vec3> vertices;
     vector<glm::vec2> texCoords;
@@ -383,6 +420,9 @@ GLuint loadSimpleOBJ(const string& filePATH, int& nVertices, glm::vec3 color) {
             glm::vec3 vn; ss >> vn.x >> vn.y >> vn.z;
             normals.push_back(vn);
         } else if (word == "f") {
+            // Cada "pedaço" da face é tipo "12/4/7". Quebro no '/' pra separar
+            // os 3 índices. O -1 é porque o .obj conta a partir de 1 e os meus
+            // vetores começam em 0.
             while (ss >> word) {
                 int vi = 0, ti = 0, ni = 0;
                 istringstream tok(word);

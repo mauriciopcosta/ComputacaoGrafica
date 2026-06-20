@@ -1,17 +1,23 @@
 /* Desafio Modulo 3 - Texturas e Materiais
  *
- * Estende o visualizador Multi-OBJ do M2-vivencial:
- *  - Le coordenadas de textura (vt) do .OBJ
- *  - Le o .MTL referenciado por "mtllib" e extrai o nome da textura (map_Kd)
- *  - Carrega cada textura via stb_image e aplica no fragment shader
+ * Mauricio Pereira da Costa - Computacao Grafica (Unisinos)
  *
- * Quando um modelo nao possui textura (ex.: Cube.mtl vazio), cai no shading
- * por cor de vertice — assim a cena continua renderizando todos os .obj da
- * pasta assets/Modelos3D/.
+ * Peguei o visualizador Multi-OBJ do M2-vivencial e fiz ele sair de "uma cor
+ * por objeto" pra mostrar TEXTURA de verdade. Pra isso eu tive que:
+ *  - ler tambem o "vt" (coordenada de textura) do .obj - o loader antigo
+ *    jogava fora, agora ele entra no vertice (que passou de 6 pra 8 floats);
+ *  - achar o nome da imagem: o .obj diz "mtllib Suzanne.mtl", entao eu abro
+ *    esse .mtl e pego a linha "map_Kd <arquivo>";
+ *  - carregar a imagem com a stb_image e amostrar ela no fragment shader.
  *
- * Autor: Mauricio Pereira da Costa - Computacao Grafica (Unisinos)
+ * Quem nao tem textura (o Cube.mtl é vazio) eu nao descarto: ele continua na
+ * cena usando a cor do vertice. Quem decide isso é a flag hasTexture no shader.
  *
- * Controles: identicos ao M2-vivencial
+ * Uma pegadinha que me custou tempo: a textura abria de cabeça pra baixo, e era
+ * porque a stb lê a imagem do topo pra baixo e o .obj usa o contrário. Resolvi
+ * com stbi_set_flip_vertically_on_load(true).
+ *
+ * Controles: iguais ao M2-vivencial
  *   TAB                cicla selecao
  *   T / R / S          modos Translacao / Rotacao / Escala
  *   Em Translacao:     setas + PageUp/PageDown
@@ -55,7 +61,9 @@ const GLuint WIDTH = 1400, HEIGHT = 900;
 static GLuint gShaderID = 0;
 static GLint  gProjLoc  = -1;
 
-// Vertex shader: agora carrega tambem coord de textura.
+// Vertex shader: a novidade é o location 2 (tex_coord). Eu só recebo a coord
+// de textura e repasso ela (vTexCoord) pro fragment - quem realmente vai usar
+// pra "buscar o pixel" na imagem é o fragment shader.
 const GLchar* vertexShaderSource = R"(
 #version 450
 layout (location = 0) in vec3 position;
@@ -73,9 +81,10 @@ void main() {
 }
 )";
 
-// Fragment shader: amostra a textura quando o objeto tem; caso contrario usa
-// a cor por vertice. Mantemos tint para realcar o objeto selecionado e modo
-// wireframe para desenhar arestas brancas.
+// Fragment shader. A linha principal é o "texture(tex_buffer, vTexCoord)": é
+// ela que pega a cor do pixel da imagem na coordenada que veio do vertice.
+// Se hasTexture==1 uso essa cor; se não, caio na cor do vertice (vColor). O
+// tint eu mantive do M2-vivencial pra destacar o selecionado.
 const GLchar* fragmentShaderSource = R"(
 #version 450
 in vec3 vColor;
@@ -127,10 +136,10 @@ static const char* modeName(Mode m) {
     return "?";
 }
 
-// Carrega um .obj montando um VBO com 8 floats por vertice (xyz + rgb + st).
-// Preenche cor neutra (branco) — o color map dita a aparencia final quando
-// a textura existe; quando nao, o branco preserva as cores originais do .mtl
-// caso a gente queira somar fallback de Kd no futuro.
+// Loader do .obj - igual ao do M2-vivencial, mas agora cada vertice tem 8
+// floats: xyz (posicao) + rgb (cor) + st (textura). A cor eu deixo branca de
+// proposito: quando tem textura, o branco "não suja" a imagem (branco * cor =
+// a propria cor); quando não tem, o objeto fica branco neutro.
 GLuint loadOBJWithTexCoords(const string& filePATH, int& nVertices, string& mtllibOut) {
     vector<glm::vec3> vertices;
     vector<glm::vec2> texCoords;
@@ -154,17 +163,18 @@ GLuint loadOBJWithTexCoords(const string& filePATH, int& nVertices, string& mtll
         ss >> word;
 
         if (word == "mtllib") {
-            ss >> mtllibOut;
+            ss >> mtllibOut;            // guardo o nome do .mtl pra abrir depois
         } else if (word == "v") {
             glm::vec3 v; ss >> v.x >> v.y >> v.z;
             vertices.push_back(v);
         } else if (word == "vt") {
             glm::vec2 vt; ss >> vt.s >> vt.t;
-            texCoords.push_back(vt);
+            texCoords.push_back(vt);    // <- agora eu NÃO jogo fora o vt
         } else if (word == "vn") {
             glm::vec3 vn; ss >> vn.x >> vn.y >> vn.z;
             normals.push_back(vn);
         } else if (word == "f") {
+            // Quebro o "v/vt/vn" e dessa vez pego tambem o ti (indice da textura).
             while (ss >> word) {
                 int vi = -1, ti = -1, ni = -1;
                 istringstream tok(word);
@@ -172,10 +182,11 @@ GLuint loadOBJWithTexCoords(const string& filePATH, int& nVertices, string& mtll
                 if (getline(tok, idx, '/')) vi = !idx.empty() ? stoi(idx) - 1 : -1;
                 if (getline(tok, idx, '/')) ti = !idx.empty() ? stoi(idx) - 1 : -1;
                 if (getline(tok, idx))      ni = !idx.empty() ? stoi(idx) - 1 : -1;
-                (void)ni;
+                (void)ni;  // a normal só vai ser usada no M4
 
                 if (vi < 0 || vi >= (int)vertices.size()) continue;
 
+                // Pego o (s,t) que esse vertice da face aponta (ou 0,0 se faltar).
                 glm::vec2 vt(0.0f);
                 if (ti >= 0 && ti < (int)texCoords.size()) vt = texCoords[ti];
 
@@ -200,6 +211,8 @@ GLuint loadOBJWithTexCoords(const string& filePATH, int& nVertices, string& mtll
     glGenVertexArrays(1, &VAO);
     glBindVertexArray(VAO);
 
+    // Agora o vertice tem 8 floats, então o stride mudou. Aponto os 3 atributos:
+    // posição (0..2), cor (3..5) e a coord de textura nova no location 2 (6..7).
     const GLsizei stride = 8 * sizeof(GLfloat);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (GLvoid*)0);
     glEnableVertexAttribArray(0);
@@ -215,8 +228,9 @@ GLuint loadOBJWithTexCoords(const string& filePATH, int& nVertices, string& mtll
     return VAO;
 }
 
-// Le um .mtl e devolve o caminho da imagem em map_Kd (relativa ao .mtl).
-// Retorna string vazia se nao encontrar.
+// Parser do .mtl - bem mininalista de proposito: o enunciado só pedia o NOME
+// da textura, então eu varro o arquivo procurando a linha "map_Kd" e devolvo o
+// que vier depois. Se não achar, volto string vazia (= objeto sem textura).
 string parseMTLForDiffuseMap(const string& mtlPath) {
     ifstream arq(mtlPath.c_str());
     if (!arq.is_open()) return "";
@@ -232,11 +246,17 @@ string parseMTLForDiffuseMap(const string& mtlPath) {
     return "";
 }
 
+// Carrega uma imagem do disco e sobe pra GPU como textura. Segui o passo a
+// passo do TriangleTex (material de apoio): cria o id, define wrap/filtros,
+// le os pixels com a stb e manda pro OpenGL com glTexImage2D + mipmaps.
 GLuint loadTexture(const string& filePath) {
     GLuint texID;
     glGenTextures(1, &texID);
     glBindTexture(GL_TEXTURE_2D, texID);
 
+    // Wrap = o que fazer fora de [0,1] (repetir). Filtros = como suavizar quando
+    // a textura aparece maior/menor que a imagem. Uso mipmap na minificação
+    // porque os modelos ficam pequenos na cena e sem isso a textura "fervilha".
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
@@ -299,7 +319,8 @@ int main() {
     GLint hasTextureLoc = glGetUniformLocation(shaderID, "hasTexture");
     gProjLoc = projLoc;
 
-    // sampler2D sempre na unidade 0
+    // Digo pro shader que o sampler "tex_buffer" vai ler da unidade de textura 0.
+    // Como eu só uso uma textura por vez, deixo a unidade 0 ativa o tempo todo.
     glUniform1i(glGetUniformLocation(shaderID, "tex_buffer"), 0);
     glActiveTexture(GL_TEXTURE0);
 
@@ -343,10 +364,13 @@ int main() {
         OBJ o;
         o.name = p.filename().string();
 
+        // Carrego a malha; de quebra o loader me diz qual .mtl o .obj referencia.
         string mtllib;
         o.VAO = loadOBJWithTexCoords(p.string(), o.nVertices, mtllib);
         if (o.VAO == 0) { idx++; continue; }
 
+        // Se tem .mtl, abro ele (ao lado do .obj), pego o map_Kd e resolvo o
+        // caminho da imagem relativo ao .mtl. Aí carrego a textura.
         if (!mtllib.empty()) {
             fs::path mtlPath = p.parent_path() / mtllib;
             string mapKd = parseMTLForDiffuseMap(mtlPath.string());

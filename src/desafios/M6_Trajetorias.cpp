@@ -1,22 +1,22 @@
 /* Desafio Modulo 6 - Trajetorias
  *
- * Estende o M5 (Camera em Primeira Pessoa): mantem a camera navegavel e a
- * iluminacao de Phong, mas traz de volta a SELECAO de objeto (TAB) e adiciona
- * TRAJETORIAS por objeto.
+ * Mauricio Pereira da Costa - Computacao Grafica (Unisinos)
  *
- * Cada objeto da cena pode ter uma lista de pontos de controle (waypoints).
- * O mecanismo de adicao de pontos eh por teclado: voce navega com a camera ate
- * o lugar desejado e pressiona P para "soltar" um waypoint na posicao atual da
- * camera, que vai para a lista de pontos de controle do objeto selecionado.
+ * Continuei do M5 (mantive a câmera que anda e a iluminação Phong), mas aqui o
+ * foco foi dar MOVIMENTO PRÓPRIO aos objetos. Cada objeto pode ter uma
+ * trajetória (uma lista de pontos de controle / waypoints) que ele percorre em
+ * loop. O que eu fiz:
+ *  - voltei com a seleção por TAB (o M5 não tinha) pra escolher quem recebe os
+ *    pontos; o selecionado fica realçado pelo tint;
+ *  - pra criar um ponto, eu voo com a câmera até o lugar e aperto P - ele
+ *    "solta" um waypoint na posição atual da câmera. Backspace tira o último, C limpa;
+ *  - dá pra SALVAR (F2) num arquivo texto simples (../assets/trajetorias.cfg) e
+ *    eu LEIO esse arquivo no início, então a trajetória sobrevive entre execuções;
+ *  - com ENTER ligo/desligo a animação. O objeto anda em LINHA RETA entre os
+ *    pontos e, ao chegar no último, volta pro primeiro (ciclo fechado).
  *
- * As trajetorias podem ser salvas em arquivo (F2) e sao carregadas
- * automaticamente na inicializacao (../assets/trajetorias.cfg).
- *
- * Ao dar play (ENTER), cada objeto com >= 2 pontos percorre sua trajetoria por
- * TRANSLACAO LINEAR e de forma CICLICA: ao chegar no ultimo ponto, volta para o
- * primeiro. Ainda NAO ha interpolacao por curva cubica (sera feita na Vivencial).
- *
- * Autor: Mauricio Pereira da Costa - Computacao Grafica (Unisinos)
+ * Importante: aqui ainda é interpolação LINEAR de propósito (o enunciado pediu).
+ * A curva cúbica (Bézier/Catmull-Rom) é o próximo passo, na vivencial.
  *
  * Controles:
  *   WASD          anda | Space/Ctrl sobe-desce | Shift corre
@@ -114,6 +114,8 @@ uniform float ambientStrength;
 out vec4 color;
 
 void main() {
+    // useFlat é o atalho que eu uso pra desenhar as LINHAS/PONTOS da trajetória
+    // com o mesmo shader: ignora toda a iluminação e pinta de uma cor sólida.
     if (useFlat == 1) {
         color = vec4(flatColor, 1.0);
         return;
@@ -462,16 +464,20 @@ void startPlayback() {
     }
 }
 
-// Avanca cada objeto ao longo de sua trajetoria por translacao linear, com
-// velocidade aproximadamente constante (distancia/segmento), de forma ciclica.
+// O coração da animação. A ideia que eu usei pra velocidade ficar constante
+// (e o objeto não "acelerar" nos trechos longos): em vez de interpolar por
+// "tempo do segmento", eu ando uma DISTÂNCIA fixa por frame (trajSpeed*dt) e
+// vou gastando essa distância ao longo dos segmentos. Se sobra distância ao
+// cruzar um waypoint, continuo no próximo. No fim, a posição é só um lerp
+// (mistura) entre o ponto atual e o próximo, proporcional ao quanto já andei.
 void updatePlayback(float dt) {
     if (!playing) return;
 
     for (auto& inst : scene) {
         int n = (int)inst.traj.size();
-        if (n < 2) continue;
+        if (n < 2) continue;          // com menos de 2 pontos não tem o que andar
 
-        float remaining = trajSpeed * dt;
+        float remaining = trajSpeed * dt;   // distância a percorrer neste frame
         int guard = 0;
         while (remaining > 0.0f && guard++ < 10000) {
             glm::vec3 a = inst.traj[inst.trajSeg];
@@ -484,17 +490,20 @@ void updatePlayback(float dt) {
                 continue;
             }
 
+            // Quanto falta pra acabar o segmento atual.
             float left = segLen - inst.trajDist;
             if (remaining < left) {
-                inst.trajDist += remaining;
+                inst.trajDist += remaining;     // não chego no fim: só avanço
                 remaining = 0.0f;
             } else {
-                remaining -= left;
-                inst.trajSeg = (inst.trajSeg + 1) % n;   // ciclico
+                remaining -= left;              // chego no fim e sobra distância
+                inst.trajSeg = (inst.trajSeg + 1) % n;   // vou pro próximo (o %n fecha o ciclo)
                 inst.trajDist = 0.0f;
             }
         }
 
+        // Posição final = lerp entre o ponto do segmento e o próximo, na
+        // fração do quanto já andei dentro dele.
         glm::vec3 a = inst.traj[inst.trajSeg];
         glm::vec3 b = inst.traj[(inst.trajSeg + 1) % n];
         float segLen = glm::length(b - a);
@@ -503,6 +512,11 @@ void updatePlayback(float dt) {
     }
 }
 
+// Salva as trajetórias num arquivo texto que eu mesmo inventei o formato:
+//   OBJECT <nome_do_modelo> <quantos_pontos>
+//   x y z          (uma linha por ponto)
+// Simples assim, dá pra abrir no bloco de notas e conferir. Só gravo objetos
+// que têm pelo menos um ponto.
 void saveTrajectories() {
     ofstream f(trajFile.c_str());
     if (!f.is_open()) {
@@ -520,6 +534,11 @@ void saveTrajectories() {
     cout << "Trajetorias salvas em " << trajFile << " (" << count << " objeto(s))" << endl;
 }
 
+// Parser do meu arquivo de trajetórias - é o "leitor do arquivo de configuração"
+// da cena. Leio linha a linha: quando acho um "OBJECT <nome> <n>", procuro na
+// cena qual objeto tem aquele nome de modelo e leio os n pontos seguintes pra
+// dentro da trajetória dele. Rodo isso na inicialização, então a cena já abre
+// com as trajetórias salvas. Se o arquivo não existe ainda, tudo bem, só saio.
 void loadTrajectories() {
     ifstream f(trajFile.c_str());
     if (!f.is_open()) return;                 // sem arquivo ainda: tudo bem
@@ -528,15 +547,17 @@ void loadTrajectories() {
     while (getline(f, line)) {
         istringstream ss(line);
         string tag; ss >> tag;
-        if (tag != "OBJECT") continue;
+        if (tag != "OBJECT") continue;        // ignoro qualquer linha que não comece com OBJECT
 
         string name; int n = 0;
         ss >> name >> n;
 
+        // Acho na cena o objeto cujo modelo tem esse nome.
         int idx = -1;
         for (size_t i = 0; i < scene.size(); ++i)
             if (meshes[scene[i].mesh].name == name) { idx = (int)i; break; }
 
+        // Leio as n linhas de coordenadas que vêm logo abaixo.
         vector<glm::vec3> pts;
         for (int k = 0; k < n; ++k) {
             if (!getline(f, line)) break;
@@ -840,6 +861,8 @@ void key_callback(GLFWwindow* window, int key, int /*scancode*/, int action, int
         return;
     }
 
+    // P = solta um waypoint exatamente onde a câmera está agora. É o meu jeito
+    // de "desenhar" a trajetória no espaço: voo até o lugar e marco o ponto.
     if (key == GLFW_KEY_P) {
         scene[selected].traj.push_back(camera.position);
         cout << "Waypoint #" << scene[selected].traj.size()
@@ -868,6 +891,8 @@ void key_callback(GLFWwindow* window, int key, int /*scancode*/, int action, int
         return;
     }
 
+    // ENTER = play/pause. Quando dou play, reinicio o estado e teleporto cada
+    // objeto pro seu primeiro ponto, pra animação começar do começo.
     if (key == GLFW_KEY_ENTER) {
         playing = !playing;
         if (playing) startPlayback();

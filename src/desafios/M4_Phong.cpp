@@ -1,18 +1,21 @@
 /* Desafio Modulo 4 - Iluminacao (Modelo de Phong)
  *
- * Estende o visualizador de OBJs texturizados do M3:
- *  - Le os vetores normais (vn) do .OBJ -> o vertice agora tem 11 floats
- *    (posicao xyz + cor rgb + textura st + normal xyz).
- *  - Le do .MTL os coeficientes de material: Ka (ambiente), Kd (difusa),
- *    Ks (especular) e Ns (expoente de brilho), enviados ao fragment shader.
- *  - Calcula no fragment shader as 3 parcelas do modelo de Phong
- *    (ambiente + difusa + especular) para UMA fonte de luz pontual.
+ * Mauricio Pereira da Costa - Computacao Grafica (Unisinos)
  *
- * A cor base de cada fragmento vem da textura (quando o material tem map_Kd)
- * ou da cor de vertice (fallback, ex.: Cube.mtl vazio). A iluminacao Phong eh
- * aplicada sobre essa cor base.
+ * Aqui a cena finalmente ganhou LUZ. Ate o M3 a cor era "chapada"; agora eu
+ * implementei o modelo de Phong (ambiente + difusa + especular) com uma fonte
+ * de luz pontual. O que eu precisei fazer:
+ *  - ler a normal (vn) do .obj - sem ela não dá pra calcular iluminação. Com
+ *    isso o vertice foi pra 11 floats: posicao + cor + textura + NORMAL;
+ *  - ler do .mtl os coeficientes do material: Ka (ambiente), Kd (difusa),
+ *    Ks (especular) e Ns (o "brilho" q da especular), e mandar tudo pro shader;
+ *  - fazer a conta do Phong por pixel lá no fragment shader.
  *
- * Autor: Mauricio Pereira da Costa - Computacao Grafica (Unisinos)
+ * A cor base continua vindo da textura (ou da cor do vertice, no fallback) - a
+ * iluminação multiplica em cima dessa cor.
+ *
+ * Deixei a luz se mexer pelo teclado (I/J/K/L/U/O) só pra eu conseguir mostrar
+ * a especular/difusa de vários ângulos sem ter que girar o objeto.
  *
  * Controles (herdados do M3):
  *   TAB                cicla selecao
@@ -57,9 +60,13 @@ const GLuint WIDTH = 1400, HEIGHT = 900;
 static GLuint gShaderID = 0;
 static GLint  gProjLoc  = -1;
 
-// Vertex shader: alem de posicao/cor/textura, agora propaga a posicao do
-// fragmento no espaco do mundo (fragPos) e a normal transformada, para que o
-// fragment shader possa calcular a iluminacao por pixel.
+// Vertex shader. Pra iluminação funcionar, o fragment precisa de duas coisas
+// que eu calculo aqui e mando pra frente:
+//  - fragPos: a posição do vértice JÁ no espaço do mundo (model * posição).
+//    É com ela que eu meço a direção da luz e da câmera lá no fragment.
+//  - vNormal: a normal também levada pro mundo. Importante: uso
+//    mat3(transpose(inverse(model))) e não só "model", senão a normal fica
+//    torta quando o objeto recebe escala diferente em cada eixo.
 const GLchar* vertexShaderSource = R"(
 #version 450
 layout (location = 0) in vec3 position;
@@ -83,10 +90,15 @@ void main() {
 }
 )";
 
-// Fragment shader: modelo de Phong com uma fonte de luz pontual.
-//   I = (ambient + diffuse) * objectColor + specular
-// Os coeficientes ka/kd/ks/q vem do .mtl. A cor base (objectColor) eh a
-// textura, quando existe, ou a cor de vertice.
+// Fragment shader: É AQUI que mora a conta da iluminação (modelo de Phong),
+// feita por pixel. A fórmula que eu montei é:
+//   I = (ambiente + difusa) * cor_do_objeto + especular
+// ambiente  -> luz de "fundo" que bate em tudo igual;
+// difusa    -> depende do ângulo entre a normal (N) e a direção da luz (L):
+//              quanto mais de frente a luz bate, mais claro (dot(N,L));
+// especular -> o brilho/reflexo: reflito a luz (R) e comparo com a direção pra
+//              câmera (V); elevo a q pra concentrar o brilho num ponto.
+// Os coeficientes ka/kd/ks/q vêm do .mtl; a cor base vem da textura ou do vColor.
 const GLchar* fragmentShaderSource = R"(
 #version 450
 in vec3 vColor;
@@ -121,31 +133,40 @@ void main() {
 
     vec3 objectColor = (hasTexture == 1) ? texture(tex_buffer, vTexCoord).rgb : vColor;
 
-    // Ambiente
+    // 1) Ambiente: uma luzinha de base. ambientStrength eu pus pequeno (0.2)
+    //    senão o Ka do material (que vem 1,1,1) estoura tudo e mata o 3D.
     vec3 ambient = ambientStrength * ka * lightColor;
 
-    // Difusa
+    // 2) Difusa: normalizo a normal (N) e calculo a direção até a luz (L).
+    //    O dot(N,L) dá quão "de frente" a luz bate. max(...,0) corta o que
+    //    está nas costas (não tem luz negativa).
     vec3 N = normalize(vNormal);
     vec3 L = normalize(lightPos - fragPos);
     float diff = max(dot(N, L), 0.0);
     vec3 diffuse = kd * diff * lightColor;
 
-    // Especular (Phong: reflexao de L em torno de N, comparada com a vista V)
+    // 3) Especular: V é a direção daqui pro olho (câmera). R é a luz refletida
+    //    na superfície. Quando R e V quase coincidem (estou vendo o reflexo)
+    //    aparece o brilho. O pow(...,q) deixa esse brilho mais concentrado.
     vec3 V = normalize(cameraPos - fragPos);
     vec3 R = reflect(-L, N);
     float spec = pow(max(dot(R, V), 0.0), q);
     vec3 specular = ks * spec * lightColor;
 
+    // Junto tudo. Repara que a especular NÃO multiplica a cor do objeto - é o
+    // brilho da própria luz (por isso vai "puro", branco). clamp pra não estourar.
     vec3 result = (ambient + diffuse) * objectColor + specular;
     color = vec4(clamp(result * tint, 0.0, 1.0), 1.0);
 }
 )";
 
+// Coeficientes de iluminação do objeto. Os valores aqui são meus DEFAULTS:
+// se o .mtl não tiver alguma linha (ex.: o Cube.mtl é vazio), o objeto usa esses.
 struct Material {
-    float ka = 0.1f;   // coeficiente ambiente
-    float kd = 0.7f;   // coeficiente difuso
-    float ks = 0.5f;   // coeficiente especular
-    float q  = 32.0f;  // expoente de brilho (Ns)
+    float ka = 0.1f;   // o quanto ele reage à luz ambiente
+    float kd = 0.7f;   // o quanto ele reage à luz difusa (o "corpo" da cor)
+    float ks = 0.5f;   // o quanto ele brilha (especular)
+    float q  = 32.0f;  // tamanho do brilho: q alto = brilho pequeno e concentrado
 };
 
 struct OBJ {
@@ -186,8 +207,9 @@ static const char* modeName(Mode m) {
     return "?";
 }
 
-// Le um .obj montando um VBO com 11 floats por vertice:
-// xyz (posicao) + rgb (cor neutra) + st (textura) + xyz (normal).
+// Loader do .obj, agora com normal: cada vertice tem 11 floats =
+// xyz (posicao) + rgb (cor) + st (textura) + xyz (NORMAL). É basicamente o
+// loader do M3 com o "vn" entrando no buffer.
 GLuint loadOBJWithNormals(const string& filePATH, int& nVertices, string& mtllibOut) {
     vector<glm::vec3> vertices;
     vector<glm::vec2> texCoords;
@@ -279,10 +301,10 @@ GLuint loadOBJWithNormals(const string& filePATH, int& nVertices, string& mtllib
     return VAO;
 }
 
-// Le um .mtl: extrai os coeficientes de material e o caminho da textura
-// (map_Kd). Como Ka/Kd/Ks sao vec3 no formato MTL, reduzimos a um escalar
-// pela media dos canais (a disciplina usa coeficientes escalares no shader).
-// Valores ausentes mantem os defaults da struct Material.
+// Parser do .mtl, agora completo: além do map_Kd (textura) eu leio os
+// coeficientes Ka/Kd/Ks e o Ns. No arquivo Ka/Kd/Ks vêm como 3 números (RGB),
+// mas no meu shader uso um escalar só, então tiro a média dos 3 canais (avg3).
+// O que o arquivo não tiver, fica com o default da struct.
 void parseMTL(const string& mtlPath, Material& matOut, string& diffuseMapOut) {
     diffuseMapOut.clear();
     ifstream arq(mtlPath.c_str());
@@ -515,6 +537,8 @@ int main() {
         glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // A luz pode ter andado neste frame, então reenvio a posição dela pro
+        // shader antes de desenhar (a cor da luz e a câmera não mudam aqui).
         glUniform3fv(lightPosLoc, 1, glm::value_ptr(lightPos));
 
         for (size_t i = 0; i < objects.size(); ++i) {
@@ -528,7 +552,9 @@ int main() {
 
             glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 
-            // Coeficientes de material deste objeto
+            // Mando os coeficientes DESTE objeto pro shader. Como cada objeto
+            // tem o seu material, isso muda a cada iteração - por isso fica aqui
+            // dentro do laço, e não lá fora.
             glUniform1f(kaLoc, o.material.ka);
             glUniform1f(kdLoc, o.material.kd);
             glUniform1f(ksLoc, o.material.ks);
