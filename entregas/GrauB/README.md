@@ -1,32 +1,27 @@
-# Grau B — Cena Final (visualizador unificado)
+# Grau B — Cena Final
 
-Esta é a entrega final da disciplina. Em vez de mostrar cada tarefa do semestre
-separada, aqui está **um único visualizador** que integra todo o pipeline numa
-cena só: leitura de vários OBJs, materiais e texturas, iluminação de Phong,
-câmera sintética navegável, seleção/transformação de objetos e animação por
-curva paramétrica (Bézier). A cena é descrita por um **arquivo de configuração**.
+Essa é a entrega que fecha a disciplina. Em vez de deixar cada desafio do semestre rodando solto num executável separado, juntei tudo num **visualizador só**: a leitura de OBJ/MTL do M3, a iluminação de Phong do M4, a câmera em primeira pessoa do M5 e a animação por trajetória do M6 — só que agora a animação virou **curva de Bézier** de verdade, e a cena inteira é montada a partir de um **arquivo de configuração** em vez de ficar chumbada no código.
+
+A ideia é que dá pra abrir o programa, montar a cena clicando/voando pela câmera, salvar, e na próxima execução tudo volta do jeito que ficou.
 
 Código-fonte: [`src/desafios/GrauB_CenaFinal.cpp`](../../src/desafios/GrauB_CenaFinal.cpp)
 Configuração da cena: [`assets/cena.cfg`](../../assets/cena.cfg)
 
-## O que tem aqui (requisitos do Grau B)
+## O que entrou aqui (e de onde veio)
 
-1. **Vários OBJs**, já triangulados, com normais e coordenadas de textura. Cada
-   objeto tem o seu material (`ka`, `kd`, `ks`, `Ns`) e textura lidos do `.mtl`.
-2. **Iluminação de Phong** com **3 fontes de luz** (esquema key/fill/back) e
-   atenuação por distância. Coeficientes parametrizáveis ao vivo (intensidade
-   das luzes e coeficiente da especular).
-3. **Câmera** controlada por teclado + mouse, com navegação livre pela cena.
-4. **Seleção de objeto** e operações geométricas: translação, rotação e escala
-   **uniforme**.
-5. **Arquivo de configuração de cena** (`cena.cfg`): define os objetos e suas
-   transformações iniciais, a animação (pontos de controle Bézier), as luzes e a
-   posição/orientação inicial da câmera + frustum.
+Como é a unificação, vale dizer o que cada parte herdou dos desafios anteriores:
+
+1. **Vários OBJs com material próprio** (vem do M3). Cada objeto é triangulado, tem normais e coordenadas de textura, e carrega seu próprio material (`ka`, `kd`, `ks`, `Ns`) e textura lidos do `.mtl`.
+2. **Iluminação de Phong** (vem do M4), mas agora com **3 fontes de luz** no esquema clássico key/fill/back e atenuação por distância. Dá pra mexer ao vivo na intensidade das luzes e no coeficiente especular.
+3. **Câmera sintética navegável** (vem do M5) — perspectiva, controle por teclado + mouse, anda livre pela cena.
+4. **Seleção e transformação de objeto** (vem do M2/M3) — translação, rotação e escala uniforme no objeto selecionado.
+5. **Animação por curva paramétrica** — aqui está a parte nova em relação ao M6. Lá o objeto andava entre os waypoints por translação **linear**; agora os pontos de controle viram uma **Bézier cúbica** e o movimento fica suave.
+
+E juntando tudo: a cena não nasce mais no código, ela é descrita no `cena.cfg`.
 
 ## O arquivo de configuração (`assets/cena.cfg`)
 
-Formato texto simples, uma palavra-chave por linha (linhas `#` são comentário).
-O parser está na função `loadScene()` do código.
+É um formato texto bem simples, uma palavra-chave por linha (linha começando com `#` é comentário). Quem lê isso é a função `loadScene()`. As palavras-chave são:
 
 ```
 camera  px py pz   yaw pitch   fov near far
@@ -35,35 +30,35 @@ object  arquivo.obj  px py pz   rx ry rz(graus)   escala
 bezier  px py pz     -> ponto de controle do ÚLTIMO objeto declarado
 ```
 
-As linhas `bezier` se anexam ao último `object`; com 4, 7, 10... pontos elas
-formam segmentos de **Bézier cúbica** encadeados (uso 7 no Cube = 2 segmentos
-fechando o ciclo).
+O detalhe é que as linhas `bezier` se anexam sempre ao último `object` que apareceu. Com 4, 7, 10... pontos elas formam segmentos de **Bézier cúbica** encadeados — no `cena.cfg` eu uso 7 pontos no Cube, que dão 2 segmentos fechando o ciclo.
 
 ## Controles
 
-| Tecla / Input | Ação |
+| Tecla / Input | O que faz |
 |---|---|
-| W A S D | Anda com a câmera |
+| W / A / S / D | Anda com a câmera |
 | Space / Ctrl | Sobe / desce a câmera |
 | Shift (segurar) | Anda mais rápido |
-| Mouse / Scroll | Olhar em volta / zoom (FOV) |
-| **TAB** | Seleciona o próximo objeto (realçado) |
+| Mouse / Scroll | Olha ao redor / zoom (FOV) |
+| **TAB** | Seleciona o próximo objeto (fica realçado) |
 | **M** | Cicla o modo: Translação → Rotação → Escala |
 | Setas / PageUp / PageDown | Aplicam o modo atual no objeto (escala usa ↑/↓) |
-| **T** | Liga/desliga a textura (mostra material puro vs texturizado) |
+| **T** | Liga/desliga a textura (material puro vs texturizado) |
 | **G** | Liga/desliga wireframe |
 | **1 / 2 / 3** | Liga/desliga cada luz (key / fill / back) |
 | **5 / 6** | Diminui / aumenta a intensidade geral das luzes |
 | **7 / 8** | Diminui / aumenta o coeficiente especular (ks) |
 | **ENTER** | Play / pause da animação (Bézier) |
-| **P** | Adiciona ponto de controle na posição da câmera |
+| **P** | Adiciona um ponto de controle na posição da câmera |
 | **Backspace / C** | Remove o último ponto / limpa a trajetória do selecionado |
 | **[ / ]** | Diminui / aumenta a velocidade da animação |
 | **B** | Mostra/esconde a curva e os pontos de controle |
 | **F2** | Salva a cena atual de volta no `cena.cfg` |
 | **ESC** | Sai |
 
-## Como compilar e rodar
+## Como rodar
+
+Mesmo esquema dos desafios anteriores — o binário precisa rodar a partir de `build/` para achar a cena e os modelos pelo caminho relativo (`../assets/...`). No Windows com MSYS2:
 
 ```powershell
 cmake -S . -B build
@@ -74,10 +69,9 @@ cd build
 .\GrauB_CenaFinal.exe
 ```
 
-> O binário precisa rodar de dentro de `build/` porque a cena e os modelos são
-> lidos por caminho relativo (`../assets/...`).
-
 ## Onde está cada conceito no código (para a arguição)
+
+Deixei mapeado o que apontar para cada pergunta possível:
 
 | Pergunta do professor | Onde apontar |
 |---|---|
@@ -88,6 +82,3 @@ cd build
 | Manipulação das matrizes Model e View | `model = translate*rotate*scale` no loop; `camera.viewMatrix()` (lookAt) |
 | Cálculo da iluminação (Phong) | laço das luzes no **fragment shader** (`fragmentShaderSource`) |
 | Curva paramétrica (Bézier) | `bezierPoint()` e `rebuildCurve()` |
-
-O roteiro detalhado da defesa está em
-[`ROTEIRO_DEFESA.md`](ROTEIRO_DEFESA.md).
