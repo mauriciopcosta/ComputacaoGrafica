@@ -52,6 +52,54 @@ Siga as instruções detalhadas em [docs/GettingStarted.md](docs/GettingStarted.
 - [Atividade Vivencial M4 — Iluminação de 3 Pontos](entregas/M4-vivencial/README.md)
 - [Desafio M5 — Câmera em 1ª Pessoa](entregas/M5/README.md)
 - [Desafio M6 — Trajetórias](entregas/M6/README.md)
+- [**Grau B — Cena Final (visualizador unificado)**](entregas/GrauB/README.md)
+
+## 🏁 Entrega Final (Grau B)
+
+O visualizador final integra tudo num único programa: leitura de **vários OBJs**
+(com material e textura do `.mtl`), **iluminação de Phong** com 3 luzes
+liga/desliga, **câmera navegável**, **seleção e transformação** de objetos
+(translação, rotação e escala uniforme) e **animação por curva de Bézier**. A
+cena é montada a partir de um **arquivo de configuração** ([assets/cena.cfg](assets/cena.cfg)).
+
+- Código-fonte: [src/desafios/GrauB_CenaFinal.cpp](src/desafios/GrauB_CenaFinal.cpp)
+- Detalhes, controles e roteiro de defesa: [entregas/GrauB/README.md](entregas/GrauB/README.md)
+
+### ⚙️ Setup (compilação e execução)
+
+Dependências resolvidas automaticamente pelo CMake via `FetchContent`: **GLFW 3.4**,
+**GLM** e **stb_image**. A **GLAD** (OpenGL 3.3+ Core) precisa ser baixada manualmente
+(ver seção abaixo). Compilador com **C++17**.
+
+```powershell
+# 1) Configurar e compilar (a partir da raiz do projeto)
+cmake -S . -B build
+cmake --build build
+
+# 2) Executar a cena final (precisa rodar de dentro de build/ por causa
+#    dos caminhos relativos ../assets/...)
+$env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"   # DLLs do GCC (MSYS2/Windows)
+cd build
+.\GrauB_CenaFinal.exe
+```
+
+### 🖼️ Assets (procedência)
+
+- **Modelos 3D** (`assets/Modelos3D/`): `Cube`, `Suzanne` e `SuzanneSubdiv1` —
+  malhas do material de apoio da disciplina (Suzanne é o macaco padrão do
+  **Blender**). Já vêm trianguladas, com normais (`vn`) e coordenadas de textura (`vt`).
+- **Texturas** (`assets/Modelos3D/Suzanne.png`, `SuzanneUV.png`, `assets/tex/pixelWall.png`):
+  mapas de cor (color map) que acompanham os modelos do material da disciplina.
+- Processamento prévio: os `.obj`/`.mtl` foram usados como vieram do material;
+  nenhum reprocessamento adicional em Blender/MeshLab foi necessário.
+
+### 📚 Referências
+
+- Joey de Vries — **LearnOpenGL** (https://learnopengl.com): câmera, iluminação,
+  texturas, transformações.
+- **Documentação OpenGL** (docs.gl) e **GLFW**/**GLM** (docs oficiais).
+- Material de apoio e snippets da disciplina (profª Rossana Baptista Queiroz):
+  `LoadSimpleOBJ`, `TriangleTex`, `SpherePhong`.
 
 ## ⚠️ **IMPORTANTE: Baixar a GLAD Manualmente**
 Para que o projeto funcione corretamente, é necessário **baixar a GLAD manualmente** utilizando o **GLAD Generator**.
